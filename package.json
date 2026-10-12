@@ -1,0 +1,28 @@
+{
+  "name": "tampletgrok",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "license": "Apache-2.0",
+  "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=22.14.0"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @tampletgrok/web dev",
+    "dev:web": "pnpm --filter @tampletgrok/web dev",
+    "dev:mobile": "pnpm --filter @tampletgrok/mobile start",
+    "build": "pnpm --filter @tampletgrok/web build",
+    "build:web": "pnpm --filter @tampletgrok/web build",
+    "check": "pnpm -r --if-present run check",
+    "test": "vitest run",
+    "export:android": "pnpm --filter @tampletgrok/mobile exec expo export --platform android --output-dir ../../dist/android",
+    "export:ios": "pnpm --filter @tampletgrok/mobile exec expo export --platform ios --output-dir ../../dist/ios"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.3",
+    "jsdom": "26.1.0",
+    "typescript": "7.0.2",
+    "vitest": "4.1.11"
+  }
+}
