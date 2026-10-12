@@ -17,7 +17,7 @@ The default install runs a local demo. Sample assistants, conversations, setting
 
 ## What was left out
 
-The Rakazo API, worker, PostgreSQL schema, Prisma client, Better Auth server, agent executor, sandbox supervisor, Docker compose stack, and hosted Expo project are not in this repository. Voice synthesis, a live computer screen, billing checkout, and provider OAuth are visible in the UI and answer locally. They do not call those services.
+The Rakazo API, worker, PostgreSQL schema, Prisma client, Better Auth server, agent executor, sandbox supervisor, Docker compose stack, updater, and hosted Expo project are not in this repository. Voice synthesis, a live computer screen, billing checkout, and provider OAuth are visible in the UI and answer locally. They do not call those services.
 
 ## Requirements
 

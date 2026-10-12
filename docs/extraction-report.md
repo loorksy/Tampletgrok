@@ -23,7 +23,7 @@ The destination is https://github.com/loorksy/Tampletgrok. The Rakazo repository
 | `packages/chat-ui` | `packages/chat-ui` |
 | `packages/contracts` | `packages/contracts` |
 | `packages/core` | `packages/core` |
-| `infra/sandboxes/computer/embed.html` | `infra/sandboxes/computer/embed.html` (fixture for a retained core test) |
+| `infra/sandboxes/computer/embed.html` | Removed in the isolation audit. It only served the noVNC proxy test. |
 
 Package scope `@rakazo/` was renamed to `@tampletgrok/`.
 
@@ -84,6 +84,18 @@ React 19, Vite, Tailwind 4, Lingui, Expo SDK 57, React Native 0.86, React Naviga
 
 The mobile procedure client can still post to a base URL when demo mode is off. That is an optional compatible transport, documented in `docs/integration.md`.
 
+## Isolation audit
+
+Reviewed after the first extraction, on the same branch:
+
+- All 44 web page modules are still present and referenced by the app source. All 23 mobile route files are still present. `group-thread.tsx` re-exports the thread screen, which is the upstream route split.
+- Removed from `packages/core` because no screen imported them: agent-skill parser, bot-to-bot hop policy, messaging prompt text, compose/self update, sandbox command timeouts, screen leases, server secret guard, and the `node/` runtime (env loader, desktop runtime, terminal server, screen proxy, approval hash). Their tests were removed with them.
+- Removed `apps/web/src/screen-proxy.ts`, `novnc-html.ts`, and `infra/sandboxes`. The computer workspace component remains.
+- Kept `packages/contracts` as the screen data model. It is not a server.
+- Replaced remaining product-name strings in the web translation JSON files. Storage keys such as `rakazo.uiAppearance`, the header `x-rakazo-space-id`, and the `RakazoNotifications` native class stay, because renaming them would break the extracted client and its tests. Attribution in `README`, `NOTICE`, and this report still names Rakazo.
+- Custom adapters are now read by the same procedures the screens already call. See `docs/integration.md`.
+- No Android emulator or device was present (`adb` and `emulator` are not installed). Android runtime launch was not performed.
+
 ## Known limitations
 
 - Demo replies are local strings. They are not model output.
@@ -91,8 +103,8 @@ The mobile procedure client can still post to a base URL when demo mode is off. 
 - The in-memory demo resets on reload.
 - Some internal storage keys and the space header `x-rakazo-space-id` still use the upstream prefix so the extracted client and its tests stay consistent.
 - The Android notification module class remains `RakazoNotifications`.
-- `packages/core` still contains helper modules about upstream updates and screen capabilities. The apps do not run that infrastructure.
 - `userInterfaceStyle: automatic` prints an Expo prebuild note about `expo-system-ui`. Appearance is applied by the app's own palette.
+- The noVNC screen proxy and sandbox embed were removed. The computer screen still renders and shows that no computer is connected.
 - No Android emulator or iOS simulator was available, so native process launch was not smoke-tested. JS bundles and native project generation were.
 
 ## Testing
@@ -102,7 +114,7 @@ Commands that passed on Node v22.22.2:
 | Command | Result |
 | --- | --- |
 | `pnpm check` | Pass. Contracts, tokens, core, ui-web, chat-ui, mock-adapters, web, mobile, and the example typecheck. |
-| `pnpm test` | Pass. 284 files, 2797 tests passed, 1 skipped. |
+| `pnpm test` | Pass after the isolation audit. 267 files, 2585 tests passed. The drop is the removed backend-only tests. |
 | `pnpm build:web` | Pass. Vite production build. |
 | `pnpm dev:web` | Pass. Serves `http://127.0.0.1:5173`. |
 | Browser render of `/app` | Pass. Sidebar shows Ada, Nia, Sol, and Launch review. Sending "Hello demo" appends that text and a reply that says no model was called. |
@@ -115,6 +127,8 @@ Commands that passed on Node v22.22.2:
 | `expo prebuild --no-install` for Android and iOS | Pass. `applicationId` and `PRODUCT_BUNDLE_IDENTIFIER` are `com.tampletgrok.app`. |
 
 A first browser load failed closed with "Something went wrong" because the demo session hook returned a new object on every snapshot and React hit its update limit. The session snapshot is now cached. The render above is after that fix.
+
+The isolation audit re-ran `pnpm check`, `pnpm test` (2585 passed), `pnpm build:web`, Android and iOS `expo export`, and `expo prebuild --no-install` for both platforms. `applicationId` and `PRODUCT_BUNDLE_IDENTIFIER` are `com.tampletgrok.app`. The generated Android project calls `autolinkLibrariesWithApp()`. The local notification module is declared by `apps/mobile/package.json` (`nativeModulesDir`) and `expo-module.config.json` as `RakazoNotifications`. Autolinking was not executed on a device. No emulator or `adb` binary was installed, so an Android process was not launched.
 
 ## Licensing
 

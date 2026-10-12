@@ -14,6 +14,8 @@ Web and mobile do not import the Rakazo API, database, or agent packages. They s
 
 `@orpc/contract` remains only because the extracted contract file describes procedure inputs and outputs with it. There is no oRPC server and no oRPC HTTP client in the web app.
 
+`packages/core` no longer includes the upstream updater, Docker image update, server secret guard, sandbox command timeout, screen lease, terminal server, desktop runtime, or root env loader. Those modules were not imported by any screen. Chart rendering (`@tampletgrok/core/plot`), message quotes, and the other presentation helpers the screens import are still there. `infra/sandboxes` was removed with the noVNC proxy; the computer panel remains a visual screen and reports that no computer is connected.
+
 ## Packages
 
 | Package | Role |

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { dispatchDemoProcedure, getAppAdapters, resetDemoAdapters } from "./store.js";
+import type { ChatAdapter } from "@tampletgrok/contracts";
+import { dispatchDemoProcedure, getAppAdapters, resetDemoAdapters, setAppAdapters } from "./store.js";
 
 describe("demo workspace", () => {
   it("lists sample assistants and answers a message locally", async () => {
@@ -20,6 +21,46 @@ describe("demo workspace", () => {
     const messages = await getAppAdapters().chat.getMessages("bot_ada");
     expect(messages.some((message) => message.content.includes("Hello from the template"))).toBe(true);
     expect(messages.some((message) => message.simulated && message.role === "assistant")).toBe(true);
+  });
+
+  it("shows a custom backend through the existing thread screen procedure", async () => {
+    const chat: ChatAdapter = {
+      async getConversations() {
+        return [];
+      },
+      async getMessages() {
+        return [
+          {
+            id: "custom-1",
+            conversationId: "thread_bot_ada",
+            role: "assistant",
+            content: "From the custom backend",
+            createdAt: new Date().toISOString(),
+          },
+        ];
+      },
+      async sendMessage(_conversationId, content) {
+        return {
+          id: "custom-2",
+          conversationId: "thread_bot_ada",
+          role: "user",
+          content,
+          createdAt: new Date().toISOString(),
+        };
+      },
+    };
+    setAppAdapters({ chat });
+    const snap = (await dispatchDemoProcedure("threads/get", { botId: "bot_ada" })) as {
+      messages: Array<{ blocks: Array<{ text?: string }> }>;
+    };
+    expect(snap.messages[0]?.blocks[0]?.text).toBe("From the custom backend");
+    resetDemoAdapters();
+    const restored = (await dispatchDemoProcedure("threads/get", { botId: "bot_ada" })) as {
+      messages: Array<{ blocks: Array<{ text?: string }> }>;
+    };
+    expect(restored.messages.some((message) => message.blocks[0]?.text?.includes("launch notes"))).toBe(
+      true,
+    );
   });
 
   it("keeps model selection inside the demo catalog", async () => {

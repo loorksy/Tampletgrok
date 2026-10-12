@@ -10,6 +10,8 @@ import type {
   Assistant,
   ChatMessage,
   Conversation,
+  ModelChoice,
+  RoutineSummary,
   UISettings,
 } from "@tampletgrok/contracts";
 import type {
@@ -857,6 +859,134 @@ async function sendOnThread(input: Record<string, unknown>) {
   return { taskId, runId, seq: userMessage?.seq ?? 1, runIds: [runId] };
 }
 
+function isCustom<K extends keyof AppAdapters>(key: K): boolean {
+  return adapters[key] !== mockAdapters[key];
+}
+
+/** Custom assistant adapters appear in the existing sidebar without screen edits. */
+async function overlayAssistants(): Promise<void> {
+  if (!isCustom("assistants")) return;
+  const listed = await adapters.assistants.listAssistants();
+  for (const assistant of listed) {
+    const existing = state.bots.find((bot) => bot.id === assistant.id);
+    if (!existing) {
+      const created = makeBot({
+        id: assistant.id,
+        name: assistant.name,
+        title: assistant.title,
+        description: assistant.description,
+        instructions: assistant.instructions,
+        color: assistant.color || "#3B82F6::shape_1",
+        preview: "Connected assistant",
+      });
+      created.archivedAt = assistant.archived ? now() : null;
+      state.bots.push(created);
+      if (!state.messages.has(created.threadId)) state.messages.set(created.threadId, []);
+      continue;
+    }
+    existing.name = assistant.name;
+    existing.title = assistant.title;
+    existing.description = assistant.description;
+    existing.instructions = assistant.instructions;
+    if (assistant.color) existing.color = assistant.color;
+    existing.archivedAt = assistant.archived ? (existing.archivedAt ?? now()) : null;
+    existing.updatedAt = now();
+  }
+}
+
+async function account(): Promise<Me> {
+  const base = me();
+  if (!isCustom("settings")) return base;
+  const settings = await adapters.settings.getSettings();
+  return {
+    ...base,
+    name: settings.displayName,
+    email: settings.email,
+    avatarStyle: settings.avatarStyle,
+  };
+}
+
+async function threadSnapshot(target: { botId?: string; groupId?: string }): Promise<ThreadSnapshot> {
+  await overlayAssistants();
+  const snap = snapshot(target);
+  if (!isCustom("chat")) return snap;
+  const messages = await adapters.chat.getMessages(snap.threadId);
+  const mapped = messages.map((message, index) =>
+    textMessage({
+      id: message.id,
+      threadId: snap.threadId,
+      seq: index + 1,
+      role: message.role === "assistant" ? "bot" : message.role,
+      text: message.content,
+      createdAt: message.createdAt,
+      ...(message.role === "assistant" && snap.botId ? { botId: snap.botId } : {}),
+    }),
+  );
+  return { ...snap, messages: mapped, cursor: mapped.at(-1)?.seq ?? -1 };
+}
+
+async function catalogFromAdapter(): Promise<ModelCatalogEntry[]> {
+  const models = await adapters.models.listModels();
+  return models.map((model) => ({
+    provider: model.provider,
+    providerName: model.providerName,
+    id: model.id,
+    label: model.label,
+    billing: model.billing,
+    auth: "api-key" as const,
+  }));
+}
+
+function credentialFromChoice(model: ModelChoice): ModelCredential {
+  return {
+    id: `cred_${model.provider}_${model.id}`,
+    provider: model.provider,
+    label: model.simulated ? `${model.label} (demo, key not sent)` : model.label,
+    hasKey: model.connected,
+    isDefault: model.id === state.selectedModel && model.provider === state.selectedProvider,
+    modelId: model.id,
+    authKind: "api_key",
+  };
+}
+
+function routineFromSummary(row: RoutineSummary): Routine {
+  return {
+    id: row.id,
+    botId: row.assistantId,
+    name: row.name,
+    prompt: row.prompt,
+    crons: row.schedule ? [row.schedule] : [],
+    timezone: "UTC",
+    active: row.active,
+    notify: false,
+    webhookEnabled: false,
+    githubEnabled: false,
+    messageProvider: null,
+    modelProvider: null,
+    modelId: null,
+    thinkingLevel: null,
+    lastRunAt: null,
+    nextRunAt: null,
+    createdAt: now(),
+  };
+}
+
+function activityRow(item: ActivityItem): RunActivityRow {
+  return {
+    runId: item.id,
+    botId: item.assistantId,
+    botName: item.assistantName,
+    groupId: null,
+    groupName: null,
+    threadId: `thread_${item.assistantId}`,
+    status: item.status === "running" ? "running" : "completed",
+    trigger: "user",
+    notificationsEnabled: false,
+    promptSnippet: item.title,
+    updatedAt: item.updatedAt,
+  };
+}
+
 function voiceStatus(): VoiceStatus {
   return {
     configured: false,
@@ -905,23 +1035,27 @@ export async function dispatchDemoProcedure(
     case "health":
       return { ok: true, version: "demo" };
     case "me":
-      return me();
+      return account();
     case "bootstrap": {
+      await overlayAssistants();
       const botId = text(body.botId);
       const bot = state.bots.find((item) => item.id === botId) ?? activeBots()[0];
       return {
-        me: me(),
+        me: await account(),
         bots: activeBots(),
         groups: activeGroups(),
         botSections: state.sections,
         archivedBots: state.bots.filter((item) => item.archivedAt),
         archivedGroups: state.groups.filter((item) => item.archivedAt),
-        thread: bot ? snapshot({ botId: bot.id }) : null,
-        routines: state.routines.filter((routine) => !bot || routine.botId === bot.id),
+        thread: bot ? await threadSnapshot({ botId: bot.id }) : null,
+        routines: isCustom("routines")
+          ? (await adapters.routines.listRoutines(bot?.id)).map(routineFromSummary)
+          : state.routines.filter((routine) => !bot || routine.botId === bot.id),
         spaces: [spaceRecord()],
       };
     }
     case "spaces.list":
+      await overlayAssistants();
       return navigation();
     case "spaces.create": {
       return { ...spaceRecord(), id: nid("space"), name: text(body.name, "Space"), isDefault: false };
@@ -934,6 +1068,7 @@ export async function dispatchDemoProcedure(
     case "spaces.remove":
       return { ok: true as const, activeSpaceId: SPACE_ID };
     case "bots.list":
+      await overlayAssistants();
       return activeBots();
     case "bots.listArchived":
       return state.bots.filter((item) => item.archivedAt);
@@ -1044,13 +1179,19 @@ export async function dispatchDemoProcedure(
       return found ?? state.sections[0];
     }
     case "threads.get":
-      return snapshot({ botId: text(body.botId) || undefined, groupId: text(body.groupId) || undefined });
+      return threadSnapshot({ botId: text(body.botId) || undefined, groupId: text(body.groupId) || undefined });
     case "threads.head": {
-      const snap = snapshot({ botId: text(body.botId) || undefined, groupId: text(body.groupId) || undefined });
+      const snap = await threadSnapshot({
+        botId: text(body.botId) || undefined,
+        groupId: text(body.groupId) || undefined,
+      });
       return { threadId: snap.threadId, cursor: snap.cursor };
     }
     case "threads.messages": {
-      const snap = snapshot({ botId: text(body.botId) || undefined, groupId: text(body.groupId) || undefined });
+      const snap = await threadSnapshot({
+        botId: text(body.botId) || undefined,
+        groupId: text(body.groupId) || undefined,
+      });
       return { threadId: snap.threadId, messages: snap.messages, olderCursor: null, coveredThroughSeq: snap.cursor };
     }
     case "threads.send":
@@ -1072,6 +1213,9 @@ export async function dispatchDemoProcedure(
     case "threads.endCall":
       return { ok: true };
     case "routines.list":
+      if (isCustom("routines")) {
+        return (await adapters.routines.listRoutines(text(body.botId) || undefined)).map(routineFromSummary);
+      }
       return state.routines.filter((routine) => !body.botId || routine.botId === body.botId);
     case "routines.create":
     case "routines.update": {
@@ -1107,11 +1251,18 @@ export async function dispatchDemoProcedure(
     case "routines.history":
       return { runs: [], nextCursor: null };
     case "models.list":
-      return state.catalog;
+      return isCustom("models") ? catalogFromAdapter() : state.catalog;
     case "models.credentials":
-      return state.credentials;
+      if (!isCustom("models")) return state.credentials;
+      return (await adapters.models.listModels())
+        .filter((model) => model.connected)
+        .map((model) => credentialFromChoice(model));
     case "models.setDefault": {
-      await adapters.models.selectModel(text(body.provider, state.selectedProvider), text(body.modelId, state.selectedModel));
+      const provider = text(body.provider, state.selectedProvider);
+      const modelId = text(body.modelId, state.selectedModel);
+      await adapters.models.selectModel(provider, modelId);
+      state.selectedProvider = provider;
+      state.selectedModel = modelId;
       return { ok: true };
     }
     case "models.connect": {
@@ -1248,6 +1399,10 @@ export async function dispatchDemoProcedure(
       state.artifacts = state.artifacts.filter((item) => item.id !== body.artifactId);
       return { ok: true };
     case "runs.list":
+      if (isCustom("activity")) {
+        const rows = (await adapters.activity.listActivity()).map(activityRow);
+        return { runs: rows.filter((row) => body.filter !== "active" || row.status === "running") };
+      }
       return {
         runs: state.activity.filter((row) => body.filter !== "active" || row.status === "running"),
       };
@@ -1293,8 +1448,9 @@ export async function dispatchDemoProcedure(
     case "preferences.update":
       if (body.avatarStyle === "robot" || body.avatarStyle === "organic") {
         state.settings.avatarStyle = body.avatarStyle;
+        if (isCustom("settings")) await adapters.settings.updateSettings({ avatarStyle: body.avatarStyle });
       }
-      return me();
+      return account();
     case "usage.summary":
       return { inputTokens: 0, outputTokens: 0, totalTokens: 0, modelCalls: 0, runs: state.activity.length };
     case "usage.list":

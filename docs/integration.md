@@ -51,6 +51,17 @@ Omitted ports keep the demo implementation. Call this before the first screen lo
 
 `examples/api-integration/src/http-adapters.ts` maps the ports onto JSON routes under a base URL. Copy that file or depend on the example package. It sends `Authorization` only if you pass a `headers` function. It does not embed a credential.
 
+The existing screens keep calling `rpc.threads.get`, `rpc.spaces.list`, `rpc.models.list`, `rpc.routines.list`, `rpc.runs.list`, and `rpc.me`. When you replace a port, the dispatcher fills those procedures from your adapter:
+
+- `assistants` updates the sidebar and bootstrap roster
+- `chat` supplies thread messages
+- `models` supplies the catalog and connected credentials
+- `routines` supplies the routine list
+- `activity` supplies the activity list
+- `settings` supplies the account name, email, and avatar style
+
+Ports you leave unset keep the demo data. A unit test installs a chat adapter and reads it back through `threads/get` without changing a screen.
+
 ## Errors and loading
 
 Adapters should reject with an `Error` whose message is safe to show. Screens already catch many procedure failures and render their existing empty, error, and loading states. A hanging promise leaves the existing skeleton up. Do not resolve a fake assistant message unless a model actually produced it. The demo copy is explicit that it is local.
