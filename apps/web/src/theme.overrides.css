@@ -1,0 +1,13 @@
+/*
+ * Optional brand overrides. These win over the default Rakazo-derived tokens.
+ *
+ * :root {
+ *   --primary: #1d4ed8;
+ *   --background: #0b0c0e;
+ *   --sidebar: #111215;
+ *   --radius: 0.75rem;
+ * }
+ *
+ * Or call applyThemeOverrides() from @tampletgrok/ui-tokens at startup.
+ * Assistant colors are the `color` field on each assistant, not these tokens.
+ */
